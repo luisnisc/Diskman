@@ -144,11 +144,21 @@ fn gestionar_volumen(nombre_particion: &str, accion: &str) -> Result<(), String>
         .status()
         .map_err(|e| format!("Error al invocar udisksctl: {}", e))?;
 
-    if status.success() {
-        Ok(())
-    } else {
-        Err(String::from("udisksctl devolvió un error (¿falta de permisos o contraseña de polkit?)"))
+    if !status.success() {
+        return Err(String::from("udisksctl devolvió un error (¿falta de permisos o contraseña de polkit?)"));
     }
+
+    if accion == "mount" {
+        if let Ok(user) = std::env::var("USER") {
+            let ruta_montaje = format!("/run/media/{}", user);
+            let _ = Command::new("nautilus")
+                .arg("--new-window")
+                .arg(ruta_montaje)
+                .spawn();
+        }
+    }
+
+    Ok(())
 }
 
 fn enviar_notificacion(titulo: &str, mensaje: &str, urgencia: &str) {
