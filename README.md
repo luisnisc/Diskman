@@ -19,3 +19,4 @@ Una utilidad ligera y ultrarrápida desarrollada en **Rust** para la gestión de
 * **Rofi** (modo dmenu / Wayland fork compatible).
 * **`udisksctl`** (suele venir preinstalado con el paquete `udisks2`).
 * **`notify-send`** (paquete `libnotify`).
+* Nautilus (explorador de archivos)
