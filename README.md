@@ -51,8 +51,10 @@ Una utilidad ligera y ultrarrápida desarrollada en **Rust** para la gestión de
 Para invocar DiskMan con un atajo de teclado personalizado, añade la siguiente línea a tu archivo de configuración (`~/.config/hypr/hyprland.conf`):
 
 ```ini
-# Ejemplo: Abrir DiskMan con Super + D
-bind = $mainMod, D, exec, ~/.local/bin/diskman
+# Ejemplo: Abrir DiskMan con Super + U 
+
+hl.bind(mainMod .. "+ U", hl.dsp.exec_cmd("./.local/bin/diskman"))
+
 ```
 
 ### Integración con Waybar
