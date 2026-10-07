@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -18,20 +18,47 @@ struct Dispositivo {
     children: Option<Vec<Dispositivo>>,
 }
 
+#[derive(Debug, Clone)]
 struct InfoDispositivo {
     name: String,
     size: String,
     montado: bool,
 }
 
+#[derive(Serialize)]
+struct WaybarOutput {
+    text: String,
+    tooltip: String,
+    alt: String,
+    class: Vec<String>,
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let modo_waybar = args.iter().any(|arg| arg == "--waybar");
+
     let dispositivos = match listar_extraibles() {
         Ok(lista) => lista,
         Err(e) => {
-            enviar_notificacion("Error DiskMan", &format!("Error al listar discos: {}", e), "critical");
+            if modo_waybar {
+                let error_json = WaybarOutput {
+                    text: String::from("💽 Err"),
+                    tooltip: format!("Error al leer dispositivos: {}", e),
+                    alt: String::from("error"),
+                    class: vec![String::from("error")],
+                };
+                println!("{}", serde_json::to_string(&error_json).unwrap());
+            } else {
+                enviar_notificacion("DiskMan", &format!("Error al listar discos: {}", e), "critical");
+            }
             return;
         }
     };
+
+    if modo_waybar {
+        generar_salida_waybar(&dispositivos);
+        return;
+    }
 
     if dispositivos.is_empty() {
         enviar_notificacion("DiskMan", "No hay dispositivos extraíbles conectados.", "normal");
@@ -48,7 +75,7 @@ fn main() {
 
     let seleccion = match lanzar_rofi(&opciones_texto) {
         Ok(res) => res,
-        Err(_) => return, 
+        Err(_) => return,
     };
 
     if seleccion.trim().is_empty() {
@@ -61,7 +88,11 @@ fn main() {
 
         match gestionar_volumen(&dispositivo, accion_str) {
             Ok(_) => {
-                let msg = format!("Dispositivo /dev/{} {} con éxito.", dispositivo, if es_desmontar { "desmontado" } else { "montado" });
+                let msg = format!(
+                    "Dispositivo /dev/{} {} con éxito.",
+                    dispositivo,
+                    if es_desmontar { "desmontado" } else { "montado" }
+                );
                 enviar_notificacion("DiskMan", &msg, "normal");
             }
             Err(e) => {
@@ -71,6 +102,7 @@ fn main() {
         }
     }
 }
+
 
 
 fn listar_extraibles() -> Result<Vec<InfoDispositivo>, Box<dyn std::error::Error>> {
@@ -95,6 +127,7 @@ fn listar_extraibles() -> Result<Vec<InfoDispositivo>, Box<dyn std::error::Error
 
     Ok(lista)
 }
+
 fn mapear_dispositivo(d: &Dispositivo) -> InfoDispositivo {
     let montado = match &d.mountpoints {
         Some(pts) => pts.iter().any(|p| p.is_some()),
@@ -159,6 +192,34 @@ fn gestionar_volumen(nombre_particion: &str, accion: &str) -> Result<(), String>
     }
 
     Ok(())
+}
+
+fn generar_salida_waybar(dispositivos: &[InfoDispositivo]) {
+    let montados: Vec<&InfoDispositivo> = dispositivos.iter().filter(|d| d.montado).collect();
+    let count = montados.len();
+
+    if count == 0 {
+        let salida = WaybarOutput {
+            text: String::from("💽 0"),
+            tooltip: String::from("No hay dispositivos extraíbles montados."),
+            alt: String::from("unmounted"),
+            class: vec![String::from("unmounted")],
+        };
+        println!("{}", serde_json::to_string(&salida).unwrap());
+    } else {
+        let mut tooltip_lines = String::from("Dispositivos montados:\n");
+        for d in &montados {
+            tooltip_lines.push_str(&format!("• /dev/{} ({})\n", d.name, d.size));
+        }
+
+        let salida = WaybarOutput {
+            text: format!("💽 {}", count),
+            tooltip: tooltip_lines.trim().to_string(),
+            alt: String::from("mounted"),
+            class: vec![String::from("mounted"), String::from("warning")],
+        };
+        println!("{}", serde_json::to_string(&salida).unwrap());
+    }
 }
 
 fn enviar_notificacion(titulo: &str, mensaje: &str, urgencia: &str) {
