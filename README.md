@@ -53,7 +53,7 @@ Para invocar DiskMan con un atajo de teclado personalizado, añade la siguiente 
 ```ini
 # Ejemplo: Abrir DiskMan con Super + U 
 
-hl.bind(mainMod .. "+ U", hl.dsp.exec_cmd("./.local/bin/diskman"))
+hl.bind("SUPER + U", hl.dsp.exec_cmd("./.local/bin/diskman"))
 
 ```
 
