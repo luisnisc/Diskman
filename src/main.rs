@@ -42,7 +42,7 @@ fn main() {
         Err(e) => {
             if modo_waybar {
                 let error_json = WaybarOutput {
-                    text: String::from("💽 Err"),
+                    text: String::from("  Err"),
                     tooltip: format!("Error al leer dispositivos: {}", e),
                     alt: String::from("error"),
                     class: vec![String::from("error")],
@@ -67,7 +67,7 @@ fn main() {
 
     let mut opciones_texto = String::new();
     for d in &dispositivos {
-        let accion = if d.montado { "Desmontar" } else { "Montar" };
+        let accion = if d.montado { "Desmontar 󰚦"} else { "Montar 󰚥" };
         let estado = if d.montado { "Montado" } else { "Desmontado" };
         let linea = format!("{} ➔ /dev/{} ({}) [{}]\n", accion, d.name, d.size, estado);
         opciones_texto.push_str(&linea);
@@ -143,7 +143,7 @@ fn mapear_dispositivo(d: &Dispositivo) -> InfoDispositivo {
 
 fn lanzar_rofi(opciones: &str) -> Result<String, std::io::Error> {
     let mut child = Command::new("rofi")
-        .args(["-dmenu", "-p", "💽 Almacenamiento"])
+        .args(["-dmenu", "-p", "  Almacenamiento"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
@@ -200,7 +200,7 @@ fn generar_salida_waybar(dispositivos: &[InfoDispositivo]) {
 
     if count == 0 {
         let salida = WaybarOutput {
-            text: String::from("💽 0"),
+            text: String::from("  0"),
             tooltip: String::from("No hay dispositivos extraíbles montados."),
             alt: String::from("unmounted"),
             class: vec![String::from("unmounted")],
@@ -213,7 +213,7 @@ fn generar_salida_waybar(dispositivos: &[InfoDispositivo]) {
         }
 
         let salida = WaybarOutput {
-            text: format!("💽 {}", count),
+            text: format!("  {}", count),
             tooltip: tooltip_lines.trim().to_string(),
             alt: String::from("mounted"),
             class: vec![String::from("mounted"), String::from("warning")],
