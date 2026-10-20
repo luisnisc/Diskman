@@ -36,6 +36,7 @@ struct WaybarOutput {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let modo_waybar = args.iter().any(|arg| arg == "--waybar");
+    let modo_flash = args.iter().any(|arg| arg == "--flash");
 
     let dispositivos = match listar_extraibles() {
         Ok(lista) => lista,
@@ -60,6 +61,15 @@ fn main() {
         return;
     }
 
+    if modo_flash {
+        if dispositivos.is_empty() {
+            enviar_notificacion("DiskMan", "No hay dispositivos USB conectados para flashear.", "normal");
+            return;
+        }
+        ejecutar_flasheo(&dispositivos);
+        return;
+    }
+
     if dispositivos.is_empty() {
         enviar_notificacion("DiskMan", "No hay dispositivos extraíbles conectados.", "normal");
         return;
@@ -67,13 +77,13 @@ fn main() {
 
     let mut opciones_texto = String::new();
     for d in &dispositivos {
-        let accion = if d.montado { "Desmontar 󰚦"} else { "Montar 󰚥" };
+        let accion = if d.montado { "Desmontar 󰚦" } else { "Montar 󰚥" };
         let estado = if d.montado { "Montado" } else { "Desmontado" };
         let linea = format!("{} ➔ /dev/{} ({}) [{}]\n", accion, d.name, d.size, estado);
         opciones_texto.push_str(&linea);
     }
 
-    let seleccion = match lanzar_rofi(&opciones_texto) {
+    let seleccion = match lanzar_rofi_custom(&opciones_texto, "  Almacenamiento") {
         Ok(res) => res,
         Err(_) => return,
     };
@@ -104,7 +114,6 @@ fn main() {
 }
 
 
-
 fn listar_extraibles() -> Result<Vec<InfoDispositivo>, Box<dyn std::error::Error>> {
     let output = Command::new("lsblk").arg("-J").output()?;
     let datos: LsblkOutput = serde_json::from_slice(&output.stdout)?;
@@ -118,10 +127,8 @@ fn listar_extraibles() -> Result<Vec<InfoDispositivo>, Box<dyn std::error::Error
                     lista.push(mapear_dispositivo(&hijo));
                 }
             }
-        } else {
-            if disco.rm {
-                lista.push(mapear_dispositivo(&disco));
-            }
+        } else if disco.rm {
+            lista.push(mapear_dispositivo(&disco));
         }
     }
 
@@ -139,21 +146,6 @@ fn mapear_dispositivo(d: &Dispositivo) -> InfoDispositivo {
         size: d.size.clone(),
         montado,
     }
-}
-
-fn lanzar_rofi(opciones: &str) -> Result<String, std::io::Error> {
-    let mut child = Command::new("rofi")
-        .args(["-dmenu", "-p", "  Almacenamiento"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(opciones.as_bytes())?;
-    }
-
-    let output = child.wait_with_output()?;
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 fn extraer_nombre_dispositivo(linea_rofi: &str) -> Option<String> {
@@ -222,6 +214,22 @@ fn generar_salida_waybar(dispositivos: &[InfoDispositivo]) {
     }
 }
 
+
+fn lanzar_rofi_custom(opciones: &str, prompt: &str) -> Result<String, std::io::Error> {
+    let mut child = Command::new("rofi")
+        .args(["-dmenu", "-i", "-p", prompt, "-no-custom"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(opciones.as_bytes())?;
+    }
+
+    let output = child.wait_with_output()?;
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 fn enviar_notificacion(titulo: &str, mensaje: &str, urgencia: &str) {
     let _ = Command::new("notify-send")
         .arg("-u")
@@ -229,4 +237,56 @@ fn enviar_notificacion(titulo: &str, mensaje: &str, urgencia: &str) {
         .arg(titulo)
         .arg(mensaje)
         .status();
+}
+
+fn ejecutar_flasheo(dispositivos: &[InfoDispositivo]) {
+    let output_find = Command::new("find")
+        .args(["/home", "-maxdepth", "4", "-name", "*.iso"])
+        .output()
+        .expect("Fallo al buscar ISOs");
+    
+    let isos = String::from_utf8_lossy(&output_find.stdout).to_string();
+    if isos.trim().is_empty() {
+        enviar_notificacion("DiskMan Flash", "No se encontraron archivos .iso en tu directorio personal.", "normal");
+        return;
+    }
+
+    let iso_seleccionada = match lanzar_rofi_custom(&isos, "💿 Seleccionar ISO") {
+        Ok(res) if !res.trim().is_empty() => res.trim().to_string(),
+        _ => return,
+    };
+
+    let mut opciones_usb = String::new();
+    for d in dispositivos {
+        let disco_base: String = d.name.chars().take_while(|c| c.is_alphabetic()).collect();
+        opciones_usb.push_str(&format!("/dev/{} ➔ ({})\n", disco_base, d.size));
+    }
+
+    let usb_seleccionado = match lanzar_rofi_custom(&opciones_usb, "⚠️ DESTINO (Se borrarán los datos)") {
+        Ok(res) if !res.trim().is_empty() => res,
+        _ => return,
+    };
+
+    let destino: String = usb_seleccionado.split_whitespace().next().unwrap_or("").to_string();
+    if destino.is_empty() { return; }
+
+    let confirmacion = lanzar_rofi_custom("NO\nSÍ, BORRAR TODO", &format!("¿Flashear {} en {}?", iso_seleccionada, destino));
+    
+    if let Ok(resp) = confirmacion {
+        if resp.trim() == "SÍ, BORRAR TODO" {
+            let _ = Command::new("kitty")
+                .args([
+                    "--class", "diskman-flash",
+                    "-e", "sudo", "dd",
+                    &format!("if={}", iso_seleccionada),
+                    &format!("of={}", destino),
+                    "bs=4M",
+                    "status=progress",
+                    "oflag=sync"
+                ])
+                .spawn();
+        } else {
+            enviar_notificacion("DiskMan Flash", "Flasheo cancelado por el usuario.", "normal");
+        }
+    }
 }
